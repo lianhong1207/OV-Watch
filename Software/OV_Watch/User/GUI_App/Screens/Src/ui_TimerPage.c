@@ -20,12 +20,12 @@ lv_obj_t * ui_TimerMilSecLabel;
 
 lv_timer_t * ui_TimerPageTimer;
 
-uint8_t ui_TimerPageFlag=0;
+volatile uint8_t ui_TimerPageFlag=0;
 uint8_t ui_TimerPage_min=0;
 uint8_t ui_TimerPage_sec=0;
 uint8_t ui_TimerPage_10ms=0;
 uint8_t ui_TimerPage_ms=0;
-uint32_t ui_TimerPage_elapsed_ms=0;
+volatile uint32_t ui_TimerPage_elapsed_ms=0;
 
 ///////////////////// ANIMATIONS ////////////////////
 
@@ -45,7 +45,7 @@ static void ui_TimerPage_Data_init(void)
 static void LabelRefresh_timer(lv_timer_t * timer)
 {
     uint32_t elapsed = ui_TimerPage_elapsed_ms;
-    uint8_t strbuf[2];
+    char strbuf[3];
 
     ui_TimerPage_min = (elapsed / 60000U) % 60U;
     ui_TimerPage_sec = (elapsed / 1000U) % 60U;
@@ -193,4 +193,12 @@ void ui_TimerPage_screen_init(void)
 
 //////////////////// SCREEN deinit ////////////////////
 void ui_TimerPage_screen_deinit(void)
-{}
+{
+    ui_TimerPageFlag = 0;
+
+    if(ui_TimerPageTimer != NULL)
+    {
+        lv_timer_del(ui_TimerPageTimer);
+        ui_TimerPageTimer = NULL;
+    }
+}

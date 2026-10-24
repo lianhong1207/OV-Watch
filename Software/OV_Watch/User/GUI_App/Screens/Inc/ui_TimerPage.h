@@ -9,8 +9,8 @@ extern "C" {
 
 extern lv_obj_t * ui_TimerPage;
 
-extern uint8_t ui_TimerPageFlag;
-extern uint32_t ui_TimerPage_elapsed_ms;
+extern volatile uint8_t ui_TimerPageFlag;
+extern volatile uint32_t ui_TimerPage_elapsed_ms;
 
 extern Page_t Page_Timer;
 
