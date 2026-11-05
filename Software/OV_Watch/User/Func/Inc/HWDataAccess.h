@@ -180,14 +180,14 @@ typedef struct
 typedef struct
 {
     uint8_t ConnectionError;
-    uint16_t Steps;
+    uint16_t Steps;               //普通变量，用来保存步数
     uint8_t wrist_state;
     uint8_t wrist_is_enabled;
 
     uint8_t (*Init)(void);
     void (*WristEnable)(void);
     void (*WristDisable)(void);
-    uint16_t (*GetSteps)(void);
+    uint16_t (*GetSteps)(void);            //函数指针，用来调用某个返回 uint16_t 的函数
     int (*SetSteps)(unsigned long count);
 } HW_IMU_InterfaceTypeDef;
 
@@ -211,8 +211,13 @@ typedef struct
 typedef struct
 {
   uint8_t ConnectionError;
-  uint16_t altitude;
+  float pressure;
+  float temperature;
+  float altitude;
   uint8_t (*Init)(void);
+	void (*Wakeup)(void);
+	void (*Sleep)(void);
+	void (*GetPreTempAlti)(float *pre, float *temp, float *alti);
 
 } HW_Barometer_InterfaceTypeDef;
 

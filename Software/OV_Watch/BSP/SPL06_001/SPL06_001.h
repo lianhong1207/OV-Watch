@@ -103,4 +103,6 @@ float Altitude_Calculate(void);
 float Pressure_Calculate(void);
 float Temperature_Calculate(void);
 
+uint8_t SPL_DataReady(void);
+
 #endif

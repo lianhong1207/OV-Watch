@@ -49,11 +49,6 @@ void HardwareInitTask(void *argument)
 	{
     vTaskSuspendAll();
 
-    // RTC Wake
-    if(HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 2000, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK)
-    {
-      Error_Handler();
-    }
     // usart start
     HAL_UART_Receive_DMA(&huart1,(uint8_t*)HardInt_receive_str,25);
     __HAL_UART_ENABLE_IT(&huart1,UART_IT_IDLE);
@@ -95,6 +90,11 @@ void HardwareInitTask(void *argument)
       num--;
       HWInterface.Barometer.ConnectionError = HWInterface.Barometer.Init();
     }
+		if(!HWInterface.Barometer.ConnectionError)
+		{
+			HWInterface.Barometer.Sleep();
+			
+		}
 
     num = 3;
     while(num && HWInterface.IMU.ConnectionError)
@@ -120,10 +120,10 @@ void HardwareInitTask(void *argument)
     {
       uint8_t recbuf[3];
       SettingGet(recbuf,0x10,2);
-      if((recbuf[0]!=0 && recbuf[0]!=1) || (recbuf[1]!=0 && recbuf[1]!=1))
+      if((recbuf[0]!=0 && recbuf[0]!=1) || (recbuf[1]!=0 && recbuf[1]!=1))    //数据合法性检查,wrist_is_enabled和ui_APPSy_EN是状态，只能是0/1
       {
         HWInterface.IMU.wrist_is_enabled = 0;
-        ui_APPSy_EN = 0;
+        ui_APPSy_EN = 0;     //ui_APPSy_EN 最准确的理解是：是否允许APP给手表同步日期/时间。
       }
       else
       {
@@ -135,14 +135,25 @@ void HardwareInitTask(void *argument)
       HAL_RTC_GetDate(&hrtc,&nowdate,RTC_FORMAT_BIN);
 
       SettingGet(recbuf,0x20,3);
-      if(recbuf[0] == nowdate.Date)
+      if(recbuf[0] == nowdate.Date)         //如果保存日期和今天一样，就把两个字节重新拼成 uint16_t steps
       {
         uint16_t steps=0;
         steps = recbuf[1]&0x00ff;
         steps = steps<<8 | recbuf[2];
         if(!HWInterface.IMU.ConnectionError)
-          dmp_set_pedometer_step_count((unsigned long)steps);
+          dmp_set_pedometer_step_count((unsigned long)steps);      //把 EEPROM 里保存的步数，恢复到 MPU6050/DMP 的计步器内部。
       }
+    }
+
+
+    // Apply the saved wrist-wake setting to the RTC wake-up timer.
+    if(HWInterface.IMU.wrist_is_enabled)
+    {
+      HWInterface.IMU.WristEnable();
+    }
+    else
+    {
+      HWInterface.IMU.WristDisable();
     }
 
 
@@ -174,8 +185,8 @@ void HardwareInitTask(void *argument)
     // ui
     // LVGL init
     lv_init();
-    lv_port_disp_init();
-    lv_port_indev_init();
+    lv_port_disp_init();       //把真实 LCD 接给 LVGL
+    lv_port_indev_init();        //把真实触摸屏接给 LVGL
     ui_init();
 
     xTaskResumeAll();

@@ -17,7 +17,8 @@ extern osMessageQueueId_t Key_MessageQueue;
 extern osMessageQueueId_t Idle_MessageQueue;
 extern osMessageQueueId_t Stop_MessageQueue;
 extern osMessageQueueId_t IdleBreak_MessageQueue;
-extern osMessageQueueId_t HomeUpdata_MessageQueue;
+extern osMessageQueueId_t SensorEvent_MessageQueue;
+extern osMessageQueueId_t HRTaskEvent_MessageQueue;
 extern osMessageQueueId_t DataSave_MessageQueue;
 extern osEventFlagsId_t HardIntEventHandle;
 

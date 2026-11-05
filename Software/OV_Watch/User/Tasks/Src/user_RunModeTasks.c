@@ -1,6 +1,7 @@
 /* Private includes -----------------------------------------------------------*/
 //includes
 #include "user_TasksInit.h"
+#include "user_SensUpdateTask.h"
 
 #include "ui.h"
 #include "ui_HomePage.h"
@@ -23,7 +24,7 @@
 /* Private define ------------------------------------------------------------*/
 
 /* Private variables ---------------------------------------------------------*/
-uint32_t IdleTimerCount = 0;
+uint32_t IdleTimerCount = 0;   //记录“用户已经多久没操作手表”
 
 /* Private function prototypes -----------------------------------------------*/
 
@@ -34,14 +35,14 @@ uint32_t IdleTimerCount = 0;
 	* @param  argument: Not used
 	* @retval None
 	*/
-void IdleEnterTask(void *argument)
+void IdleEnterTask(void *argument)         //实际上是IdleManagerTask，在管理整套Idle状态逻辑
 {
 	uint8_t Idlestr=0;
 	uint8_t IdleBreakstr=0;
-	uint8_t light_off_sent = 0;
+	uint8_t light_off_sent = 0;      //标记屏幕是否已经进入变暗状态(0为没变暗)
 	while(1)
 	{
-		//light get dark
+		//light get dark   
 		if(osMessageQueueGet(Idle_MessageQueue,&Idlestr,NULL,1)==osOK)
 		{
 			LCD_Set_Light(5);
@@ -81,7 +82,6 @@ void IdleEnterTask(void *argument)
 void StopEnterTask(void *argument)
 {
 	uint8_t Stopstr;
-	uint8_t HomeUpdataStr;
 	uint8_t Wrist_Flag=0;
 	while(1)
 	{
@@ -113,7 +113,7 @@ void StopEnterTask(void *argument)
 			//systick int
 			CLEAR_BIT(SysTick->CTRL, SysTick_CTRL_TICKINT_Msk);
 			//enter stop mode
-			HAL_PWR_EnterSTOPMode(PWR_MAINREGULATOR_ON,PWR_STOPENTRY_WFI);
+			HAL_PWR_EnterSTOPMode(PWR_MAINREGULATOR_ON,PWR_STOPENTRY_WFI);          //CPU 执行到这里后，会进入 STOP，暂停继续执行程序。等待唤醒才会继续
 
 			//here is the sleep period
 
@@ -137,7 +137,7 @@ void StopEnterTask(void *argument)
 			{
 				uint8_t hor;
 				hor = MPU_isHorizontal();
-				if(hor && HWInterface.IMU.wrist_state == WRIST_DOWN)
+				if(hor && HWInterface.IMU.wrist_state == WRIST_DOWN)   //分别代表现在姿态和之前姿态，要一起看才能判断状态变化没
 				{
 					HWInterface.IMU.wrist_state = WRIST_UP;
 					Wrist_Flag = 1;
@@ -174,7 +174,7 @@ void StopEnterTask(void *argument)
 			if(ChargeCheck())
 			{osEventFlagsSet(HardIntEventHandle, HARDINT_EVENT_CHARG);}
 			//send the Home Updata message
-			osMessageQueuePut(HomeUpdata_MessageQueue, &HomeUpdataStr, 0, 1);
+			SensorData_SendEvent(SENSOR_EVENT_HOME_PAGE_REFRESH);
 
 			/**************************************************************************************/
 

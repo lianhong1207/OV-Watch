@@ -1,6 +1,9 @@
 #include <math.h>
 #include "SPL06_001.h"
 
+#define SPL_INIT_READY_MASK     0xC0
+#define SPL_INIT_TIMEOUT_MS     100
+
 #define SPL_CLK_ENABLE __HAL_RCC_GPIOB_CLK_ENABLE()
 iic_bus_t SPL_bus = 
 {
@@ -64,7 +67,7 @@ int16_t get_c0()
 	c0 = buff[0];
 	c0 = (c0 << 4) | (buff[1] >> 4);
 	if(c0 & (1<<11))
-	{c0 |= 0xF000;}
+	{c0 |= 0xF000;}      //12位数的最高位 bit11 用来判断正负,1负数，0非负。C语言判断正负时，看的是16位数的最高位 bit15，所以把原来符号位左边新增的位都补成和符号位相同的值
 	return c0;
 }
 
@@ -166,11 +169,43 @@ int16_t get_c30()
 	return c30;
 }
 
+static uint8_t SPL_WaitInitReady(uint32_t timeout_ms)
+{
+	uint32_t start_tick = HAL_GetTick();
+	
+	while((HAL_GetTick() - start_tick) < timeout_ms)
+    {
+        uint8_t status = SPL_ReadOneReg(SPL_MEAS_CFG);
+
+        if((status & SPL_INIT_READY_MASK) == SPL_INIT_READY_MASK)
+        {
+            return 0;
+        }
+
+        HAL_Delay(1);
+    }
+
+    return 1;
+}
+
 uint8_t SPL_init()
 {
+	uint8_t id;
 	
 	SPL_CLK_ENABLE;
 	IICInit(&SPL_bus);
+	
+	id = SPL_GetID();
+	
+	if((id & 0xF0) != SPL_CHIP_ID)
+  {
+		return 1;
+  }
+	
+	if(SPL_WaitInitReady(SPL_INIT_TIMEOUT_MS) != 0)
+  {
+		return 1;
+  }
 	
 	SPL_WriteOneReg(SPL_PRS_CFG, 0x01);		// Pressure 2x oversampling
 
@@ -190,7 +225,7 @@ uint8_t SPL_init()
 	c00 = get_c00();
 	c10 = get_c10();
 	
-	if(SPL_ReadOneReg(SPL_PRS_CFG)!=0x01 || SPL_ReadOneReg(SPL_CFG_REG)!=0x00)
+	if(SPL_ReadOneReg(SPL_PRS_CFG)!=0x01 || (SPL_ReadOneReg(SPL_TMP_CFG) != 0x80) || ((SPL_ReadOneReg(SPL_MEAS_CFG) & 0x07) != 0x07) || SPL_ReadOneReg(SPL_CFG_REG)!=0x00)
 	{return 1;}//ERRO
 	else 
 	{return 0;}//SUCCESS
@@ -211,6 +246,17 @@ void SPL_Wakeup()
 uint8_t SPL_GetID()
 {
 	return SPL_ReadOneReg(SPL_ID_REG);
+}
+
+uint8_t SPL_DataReady(void)
+{
+	uint8_t status;
+	status = SPL_ReadOneReg(SPL_MEAS_CFG);
+	if((status & 0x30U) == 0x30U)
+	{
+		return 1;
+	}
+	return 0;
 }
 
 float Temperature_Calculate()

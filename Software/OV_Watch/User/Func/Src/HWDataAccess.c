@@ -14,6 +14,37 @@
 #include "../Inc/HWDataAccess.h"
 
 
+#define HW_RTC_WAKEUP_COUNTER 2000U
+
+
+static void HW_RTC_WakeUpTimer_Enable(void)
+{
+	#if HW_USE_RTC
+		if((hrtc.Instance->CR & RTC_CR_WUTE) == 0U)
+		{
+			if(HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, HW_RTC_WAKEUP_COUNTER, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK)
+			{
+				Error_Handler();
+			}
+		}
+	#endif
+}
+
+
+static void HW_RTC_WakeUpTimer_Disable(void)
+{
+	#if HW_USE_RTC
+		if((hrtc.Instance->CR & RTC_CR_WUTE) != 0U)
+		{
+			if(HAL_RTCEx_DeactivateWakeUpTimer(&hrtc) != HAL_OK)
+			{
+				Error_Handler();
+			}
+		}
+	#endif
+}
+
+
 /***************************
  *  RTC Fucntions
  ***************************/
@@ -276,6 +307,7 @@ void HW_MPU_Wrist_Enable(void)
 {
 	#if HW_USE_IMU
 		HWInterface.IMU.wrist_is_enabled = 1;
+		HW_RTC_WakeUpTimer_Enable();
 	#endif
 }
 
@@ -293,6 +325,7 @@ void HW_MPU_Wrist_Disable(void)
 {
 	#if HW_USE_IMU
 		HWInterface.IMU.wrist_is_enabled = 0;
+		HW_RTC_WakeUpTimer_Disable();
 	#endif
 }
 
@@ -398,6 +431,31 @@ uint8_t HW_Barometer_Init(void)
 	return -1;
 }
 
+void HW_Barometer_Wakeup(void)
+{
+#if HW_USE_SPL06
+    SPL_Wakeup();
+#endif
+}
+
+void HW_Barometer_Sleep(void)
+{
+	#if HW_USE_SPL06
+		SPL_Sleep();
+	#endif
+}
+
+void HW_Barometer_Get_Pre_Temp_Alti(float *pre, float *temp, float *alti)
+{
+	#if HW_USE_SPL06
+		if(!HWInterface.Barometer.ConnectionError && SPL_DataReady())
+		{
+			*pre = Pressure_Calculate();
+			*temp = Temperature_Calculate();
+			*alti = Altitude_Calculate();
+		}
+	#endif
+}
 
 /***************************
  *  E-compass Fucntions - LSM303
@@ -507,7 +565,7 @@ HW_InterfaceTypeDef HWInterface = {
     },
 
 	.IMU = {
-		.ConnectionError = 1,
+		.ConnectionError = 1,        //1 → 有错误 / MPU当前不可正常使用
 		.Steps = 0,
 		.wrist_is_enabled = 0,
 		.wrist_state = WRIST_UP,
@@ -526,8 +584,13 @@ HW_InterfaceTypeDef HWInterface = {
 	},
 	.Barometer = {
 		.ConnectionError = 1,
-		.altitude = 19,
+		.pressure = 101325.0f,
+		.temperature = 25.0f,
+		.altitude = 19.0f,
 		.Init = HW_Barometer_Init,
+		.Wakeup = HW_Barometer_Wakeup,
+		.Sleep = HW_Barometer_Sleep,
+		.GetPreTempAlti = HW_Barometer_Get_Pre_Temp_Alti,
 	},
 	.Ecompass = {
 		.ConnectionError = 1,

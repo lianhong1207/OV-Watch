@@ -23,9 +23,12 @@
 /* Private typedef -----------------------------------------------------------*/
 
 /* Private define ------------------------------------------------------------*/
+#define COMPASS_PAGE_SAMPLE_PERIOD_MS 500U
+#define ENV_PAGE_SAMPLE_PERIOD_MS     3000U
+#define HR_SAMPLE_PERIOD_MS           50U
 
 /* Private variables ---------------------------------------------------------*/
-uint32_t user_HR_timecount=0;
+uint32_t user_HR_timecount=0;         //给心率算法用的时间计数,STM32/FreeRTOS 自己累计出来的当前时间
 
 /* Private function prototypes -----------------------------------------------*/
 // 这是EM7028官方lib的库函数, 没有lib用不了
@@ -74,39 +77,197 @@ void MPUCheckTask(void *argument)
 }
 
 /**
+  * @brief  Send a command to the HR data task
+  * @param  event: HR task event type
+  * @retval None
+  */
+void HRTask_SendEvent(HRTaskEventType_t event)
+{
+	osMessageQueuePut(HRTaskEvent_MessageQueue, &event, 0, 0);
+}
+
+static void Sensor_UpdateHRData(void)
+{
+	uint8_t idle_break_message = 0;
+	uint8_t hr_temp;
+
+	osMessageQueuePut(IdleBreak_MessageQueue,
+	                  &idle_break_message,
+	                  0,
+	                  1);
+
+	if(!HWInterface.HR_meter.ConnectionError)
+	{
+		vTaskSuspendAll();
+		hr_temp = HR_Calculate(EM7028_Get_HRS1(), user_HR_timecount);
+		xTaskResumeAll();
+
+		if((HWInterface.HR_meter.HrRate != hr_temp) &&
+		   (hr_temp > 50) && (hr_temp < 120))
+		{
+			HWInterface.HR_meter.HrRate = hr_temp;
+		}
+	}
+}
+
+/**
   * @brief  HR data renew task
   * @param  argument: Not used
   * @retval None
   */
 void HRDataUpdateTask(void *argument)
 {
-	uint8_t IdleBreakstr=0;
-	uint16_t dat=0;
-	uint8_t hr_temp=0;
+	HRTaskEventType_t event;
+	uint8_t hr_active = 0;
+
 	while(1)
 	{
-		if(Page_Get_NowPage()->page_obj == &ui_HRPage)
+		uint32_t wait_time = hr_active ? HR_SAMPLE_PERIOD_MS : osWaitForever;
+		osStatus_t status = osMessageQueueGet(HRTaskEvent_MessageQueue,
+		                                      &event,
+		                                      NULL,
+		                                      wait_time);
+
+		if(status == osOK)
 		{
-			osMessageQueuePut(IdleBreak_MessageQueue, &IdleBreakstr, 0, 1);
-			//sensor wake up
-			EM7028_hrs_Enable();
-			//receive the sensor wakeup message, sensor wakeup
-			if(!HWInterface.HR_meter.ConnectionError)
+			switch(event)
 			{
-				//Hr messure
-				vTaskSuspendAll();
-				hr_temp = HR_Calculate(EM7028_Get_HRS1(),user_HR_timecount);
-				xTaskResumeAll();
-				if(HWInterface.HR_meter.HrRate != hr_temp && hr_temp>50 && hr_temp<120)
-				{
-					HWInterface.HR_meter.HrRate = hr_temp;
-				}
+				case HR_TASK_EVENT_PAGE_ENTER:
+					if(!HWInterface.HR_meter.ConnectionError)
+					{
+						EM7028_hrs_Enable();
+						hr_active = 1;
+					}
+					else
+					{
+						hr_active = 0;
+					}
+					break;
+
+				case HR_TASK_EVENT_PAGE_EXIT:
+					hr_active = 0;
+					if(!HWInterface.HR_meter.ConnectionError)
+					{
+						EM7028_hrs_DisEnable();
+					}
+					break;
+
+				default:
+					break;
 			}
 		}
-		osDelay(50);
+		else if((status == osErrorTimeout) && hr_active)
+		{
+			Sensor_UpdateHRData();
+		}
 	}
 }
 
+/**
+  * @brief  Send a command to the sensor data task
+  * @param  event: Sensor event type
+  * @retval None
+  */
+void SensorData_SendEvent(SensorEventType_t event)
+{
+	osMessageQueuePut(SensorEvent_MessageQueue, &event, 0, 0);
+}
+
+static void Sensor_UpdateHomePageData(void)
+{
+	HWInterface.Power.power_remain = HWInterface.Power.BatCalculate();
+	if((HWInterface.Power.power_remain == 0) ||
+	   (HWInterface.Power.power_remain > 100))
+	{
+		HWInterface.Power.power_remain = 0;
+	}
+
+	if(!HWInterface.IMU.ConnectionError)
+	{
+		HWInterface.IMU.Steps = HWInterface.IMU.GetSteps();
+	}
+
+	if(!HWInterface.AHT21.ConnectionError)
+	{
+		float humi;
+		float temp;
+
+		HWInterface.AHT21.GetHumiTemp(&humi, &temp);
+		if((temp > -10) && (temp < 50) &&
+		   (humi > 0) && (humi < 100))
+		{
+			HWInterface.AHT21.humidity = humi;
+			HWInterface.AHT21.temperature = temp;
+		}
+	}
+
+	{
+		uint8_t data_save_message = 3;
+		osMessageQueuePut(DataSave_MessageQueue,
+		                  &data_save_message,
+		                  0,
+		                  1);
+	}
+}
+
+static void Sensor_UpdateEnvPageData(void)
+{
+	uint8_t idle_break_message = 0;
+	osMessageQueuePut(IdleBreak_MessageQueue,
+	                  &idle_break_message,
+	                  0,
+	                  1);
+
+	if(!HWInterface.AHT21.ConnectionError)
+	{
+		float humi;
+		float temp;
+
+		HWInterface.AHT21.GetHumiTemp(&humi, &temp);
+		if((temp > -10) && (temp < 50) &&
+		   (humi > 0) && (humi < 100))
+		{
+			HWInterface.AHT21.temperature = (int8_t)temp;
+			HWInterface.AHT21.humidity = (int8_t)humi;
+		}
+	}
+}
+
+static void Sensor_UpdateCompassPageData(void)
+{
+	uint8_t idle_break_message = 0;
+	osMessageQueuePut(IdleBreak_MessageQueue,
+	                  &idle_break_message,
+	                  0,
+	                  1);
+
+	if(!HWInterface.Ecompass.ConnectionError)
+	{
+		int16_t Xa, Ya, Za, Xm, Ym, Zm;
+		float direction;
+
+		LSM303_ReadAcceleration(&Xa, &Ya, &Za);
+		LSM303_ReadMagnetic(&Xm, &Ym, &Zm);
+		direction = Azimuth_Calculate(Xa, Ya, Za, Xm, Ym, Zm);
+		if(direction < 0)
+		{
+			direction += 360;
+		}
+		if((direction >= 0) && (direction <= 360))
+		{
+			HWInterface.Ecompass.direction = (uint16_t)direction;
+		}
+	}
+
+	if(!HWInterface.Barometer.ConnectionError)
+	{
+		HWInterface.Barometer.GetPreTempAlti(
+			&HWInterface.Barometer.pressure,
+			&HWInterface.Barometer.temperature,
+			&HWInterface.Barometer.altitude
+		);
+	}
+}
 
 /**
   * @brief  Sensor data update task
@@ -115,119 +276,82 @@ void HRDataUpdateTask(void *argument)
   */
 void SensorDataUpdateTask(void *argument)
 {
-	uint8_t value_strbuf[6];
-	uint8_t IdleBreakstr=0;
+	SensorEventType_t event;
+	uint8_t env_page_active = 0;
+	uint8_t compass_page_active = 0;
+
 	while(1)
 	{
-		// Update the sens data showed in Home
-		uint8_t HomeUpdataStr;
-		if(osMessageQueueGet(HomeUpdata_MessageQueue, &HomeUpdataStr, NULL, 0)==osOK)
+		uint32_t wait_time = osWaitForever;
+
+		if(compass_page_active)
 		{
-			//bat
-			uint8_t value_strbuf[5];
-
-			HWInterface.Power.power_remain = HWInterface.Power.BatCalculate();
-			if(HWInterface.Power.power_remain>0 && HWInterface.Power.power_remain<=100)
-			{}
-			else
-			{HWInterface.Power.power_remain = 0;}
-
-			//steps
-			if(!(HWInterface.IMU.ConnectionError))
-			{
-				HWInterface.IMU.Steps = HWInterface.IMU.GetSteps();
-			}
-
-			//temp and humi
-			if(!(HWInterface.AHT21.ConnectionError))
-			{
-				//temp and humi messure
-				float humi,temp;
-				HWInterface.AHT21.GetHumiTemp(&humi,&temp);
-				//check
-				if(temp>-10 && temp<50 && humi>0 && humi<100)
-				{
-					// ui_EnvTempValue = (int8_t)temp;
-					// ui_EnvHumiValue = (int8_t)humi;
-					HWInterface.AHT21.humidity = humi;
-					HWInterface.AHT21.temperature = temp;
-				}
-			}
-
-			//send data save message queue
-			uint8_t Datastr = 3;
-			osMessageQueuePut(DataSave_MessageQueue, &Datastr, 0, 1);
-
+			wait_time = COMPASS_PAGE_SAMPLE_PERIOD_MS;
+		}
+		else if(env_page_active)
+		{
+			wait_time = ENV_PAGE_SAMPLE_PERIOD_MS;
 		}
 
-
-		// SPO2 Page
-		if(Page_Get_NowPage()->page_obj == &ui_SPO2Page)
+		if(osMessageQueueGet(SensorEvent_MessageQueue,
+		                     &event,
+		                     NULL,
+		                     wait_time) == osOK)
 		{
-			osMessageQueuePut(IdleBreak_MessageQueue, &IdleBreakstr, 0, 1);
-			//sensor wake up
-
-			//receive the sensor wakeup message, sensor wakeup
-			if(0)
+			switch(event)
 			{
-				//SPO2 messure
+				case SENSOR_EVENT_HOME_PAGE_REFRESH:
+					Sensor_UpdateHomePageData();
+					break;
+
+				case SENSOR_EVENT_ENV_PAGE_ENTER:
+					env_page_active = 1;
+					Sensor_UpdateEnvPageData();
+					break;
+
+				case SENSOR_EVENT_ENV_PAGE_EXIT:
+					env_page_active = 0;
+					break;
+
+				case SENSOR_EVENT_COMPASS_PAGE_ENTER:
+					compass_page_active = 1;
+					if(!HWInterface.Ecompass.ConnectionError)
+					{
+						LSM303DLH_Wakeup();
+					}
+					if(!HWInterface.Barometer.ConnectionError)
+					{
+						HWInterface.Barometer.Wakeup();
+					}
+					Sensor_UpdateCompassPageData();
+					break;
+
+				case SENSOR_EVENT_COMPASS_PAGE_EXIT:
+					compass_page_active = 0;
+					if(!HWInterface.Ecompass.ConnectionError)
+					{
+						LSM303DLH_Sleep();
+					}
+					if(!HWInterface.Barometer.ConnectionError)
+					{
+						HWInterface.Barometer.Sleep();
+					}
+					break;
+
+				default:
+					break;
 			}
 		}
-		// Env Page
-		else if(Page_Get_NowPage()->page_obj == &ui_EnvPage)
+		else
 		{
-			osMessageQueuePut(IdleBreak_MessageQueue, &IdleBreakstr, 0, 1);
-			//receive the sensor wakeup message, sensor wakeup
-			if(!HWInterface.AHT21.ConnectionError)
+			if(compass_page_active)
 			{
-				//temp and humi messure
-				float humi,temp;
-				HWInterface.AHT21.GetHumiTemp(&humi,&temp);
-				//check
-				if(temp>-10 && temp<50 && humi>0 && humi<100)
-				{
-					HWInterface.AHT21.temperature = (int8_t)temp;
-					HWInterface.AHT21.humidity = (int8_t)humi;
-				}
+				Sensor_UpdateCompassPageData();
 			}
-
-		}
-		// Compass page
-		else if(Page_Get_NowPage()->page_obj == &ui_CompassPage)
-		{
-			osMessageQueuePut(IdleBreak_MessageQueue, &IdleBreakstr, 0, 1);
-			//receive the sensor wakeup message, sensor wakeup
-			LSM303DLH_Wakeup();
-			//SPL_Wakeup();
-			//if the sensor is no problem
-			if(!HWInterface.Ecompass.ConnectionError)
+			else if(env_page_active)
 			{
-				//messure
-				int16_t Xa,Ya,Za,Xm,Ym,Zm;
-				LSM303_ReadAcceleration(&Xa,&Ya,&Za);
-				LSM303_ReadMagnetic(&Xm,&Ym,&Zm);
-				float temp = Azimuth_Calculate(Xa,Ya,Za,Xm,Ym,Zm)+0;//0 offset
-				if(temp<0)
-				{temp+=360;}
-				//check
-				if(temp>=0 && temp<=360)
-				{
-					HWInterface.Ecompass.direction = (uint16_t)temp;
-				}
-			}
-			//if the sensor is no problem
-			if(!HWInterface.Barometer.ConnectionError)
-			{
-				//messure
-				float alti = Altitude_Calculate();
-				//check
-				if(1)
-				{
-					HWInterface.Barometer.altitude = (int16_t)alti;
-				}
+				Sensor_UpdateEnvPageData();
 			}
 		}
-
-		osDelay(500);
 	}
 }

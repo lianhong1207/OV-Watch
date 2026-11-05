@@ -2,6 +2,7 @@
 #include "../../ui_helpers.h"
 #include "../Inc/ui_EnvPage.h"
 #include "../../../Func/Inc/HWDataAccess.h"
+#include "../../../Tasks/Inc/user_SensUpdateTask.h"
 
 ///////////////////// Page Manager //////////////////
 Page_t Page_Env = {ui_EnvPage_screen_init, ui_EnvPage_screen_deinit, &ui_EnvPage};
@@ -38,6 +39,8 @@ static void EnvPage_timer_cb(lv_timer_t * timer)
 ///////////////////// SCREEN init ////////////////////
 void ui_EnvPage_screen_init(void)
 {
+    SensorData_SendEvent(SENSOR_EVENT_ENV_PAGE_ENTER);
+
 		uint8_t strbuf[5];
     ui_EnvPage = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_EnvPage, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -137,4 +140,5 @@ void ui_EnvPage_screen_init(void)
 void ui_EnvPage_screen_deinit(void)
 {
   lv_timer_del(ui_EnvPageTimer);
+  SensorData_SendEvent(SENSOR_EVENT_ENV_PAGE_EXIT);
 }

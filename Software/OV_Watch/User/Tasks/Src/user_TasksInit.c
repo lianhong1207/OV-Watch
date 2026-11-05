@@ -140,7 +140,8 @@ osMessageQueueId_t Key_MessageQueue;
 osMessageQueueId_t Idle_MessageQueue;
 osMessageQueueId_t Stop_MessageQueue;
 osMessageQueueId_t IdleBreak_MessageQueue;
-osMessageQueueId_t HomeUpdata_MessageQueue;
+osMessageQueueId_t SensorEvent_MessageQueue;
+osMessageQueueId_t HRTaskEvent_MessageQueue;
 osMessageQueueId_t DataSave_MessageQueue;
 osEventFlagsId_t HardIntEventHandle;
 
@@ -166,7 +167,8 @@ void User_Tasks_Init(void)
 	Idle_MessageQueue = osMessageQueueNew(1, 1, NULL);
 	Stop_MessageQueue = osMessageQueueNew(1, 1, NULL);
 	IdleBreak_MessageQueue = osMessageQueueNew(1, 1, NULL);
-	HomeUpdata_MessageQueue = osMessageQueueNew(1, 1, NULL);
+	SensorEvent_MessageQueue = osMessageQueueNew(8, sizeof(SensorEventType_t), NULL);
+	HRTaskEvent_MessageQueue = osMessageQueueNew(4, sizeof(HRTaskEventType_t), NULL);
 	DataSave_MessageQueue = osMessageQueueNew(2, 1, NULL);
   HardIntEventHandle = osEventFlagsNew(NULL);
 
@@ -189,8 +191,7 @@ void User_Tasks_Init(void)
 
 
 	/* add  others ... */
-	uint8_t HomeUpdataStr;
-	osMessageQueuePut(HomeUpdata_MessageQueue, &HomeUpdataStr, 0, 1);
+	SensorData_SendEvent(SENSOR_EVENT_HOME_PAGE_REFRESH);
 
 }
 
@@ -212,7 +213,7 @@ void TaskTickHook(void)
 	}
   else
   {
-    IdleTimerCount += 1;
+    IdleTimerCount += 1;    
   }
 	user_HR_timecount+=1;
 }
@@ -228,7 +229,7 @@ void LvHandlerTask(void *argument)
 	uint8_t IdleBreakstr=0;
   while(1)
   {
-		if(lv_disp_get_inactive_time(NULL)<1000)
+		if(lv_disp_get_inactive_time(NULL)<1000)            //lv_disp_get_inactive_time:LVGL 记录的“多久没有用户操作了”
 		{
 			//Idle time break, set to 0
 			osMessageQueuePut(IdleBreak_MessageQueue, &IdleBreakstr, 0, 0);

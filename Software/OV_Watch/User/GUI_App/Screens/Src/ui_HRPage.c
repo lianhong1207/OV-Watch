@@ -2,6 +2,7 @@
 #include "../../ui_helpers.h"
 #include "../Inc/ui_HRPage.h"
 #include "../../../Func/Inc/HWDataAccess.h"
+#include "../../../Tasks/Inc/user_SensUpdateTask.h"
 
 ///////////////////// Page Manager //////////////////
 Page_t Page_HR = {ui_HRPage_screen_init, ui_HRPage_screen_deinit, &ui_HRPage};
@@ -34,6 +35,8 @@ static void HRPage_timer_cb(lv_timer_t * timer)
 void ui_HRPage_screen_init(void)
 {
     uint8_t value_strbuf[5];
+
+	    HRTask_SendEvent(HR_TASK_EVENT_PAGE_ENTER);
 
     ui_HRPage = lv_obj_create(NULL);
     lv_obj_clear_flag(ui_HRPage, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
@@ -88,4 +91,5 @@ void ui_HRPage_screen_init(void)
 void ui_HRPage_screen_deinit(void)
 {
     lv_timer_del(ui_HRPageTimer);
+	    HRTask_SendEvent(HR_TASK_EVENT_PAGE_EXIT);
 }
